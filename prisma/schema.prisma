@@ -1,0 +1,101 @@
+// datasource ve generator yapılandırması
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Enums
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+// 1. Tenants (Kiracılar)
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(100)
+  slug      String   @unique @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // İlişkiler
+  users          User[]
+  skills         Skill[]
+  employeeSkills EmployeeSkill[]
+
+  @@map("tenants")
+}
+
+// 2. Users (Kullanıcılar)
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  email     String   @db.VarChar(255)
+  fullName  String   @map("full_name") @db.VarChar(100)
+  role      Role     @default(EMPLOYEE)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // İlişkiler
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employeeSkills EmployeeSkill[]
+
+  // Aynı kiracı içinde email benzersiz olmalıdır
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+// 3. Skills (Yetenekler / Beceriler)
+model Skill {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  name        String   @db.VarChar(100)
+  category    String?  @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // İlişkiler
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employeeSkills EmployeeSkill[]
+
+  // Aynı kiracı içinde yetenek adı benzersiz olmalıdır
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("skills")
+}
+
+// 4. EmployeeSkills (Çalışan Yetenek Eşleşmesi - Pivot Tablo)
+model EmployeeSkill {
+  id          String           @id @default(uuid())
+  tenantId    String           @map("tenant_id")
+  userId      String           @map("user_id")
+  skillId     String           @map("skill_id")
+  proficiency ProficiencyLevel @default(BEGINNER)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  // İlişkiler
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill  Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  // Bir çalışan aynı yeteneğe birden fazla kez sahip olamaz
+  @@unique([userId, skillId])
+  // Sorgu performansları ve izolasyon için bileşik indeksler
+  @@index([tenantId])
+  @@index([tenantId, userId])
+  @@map("employee_skills")
+}
